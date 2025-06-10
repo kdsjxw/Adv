@@ -11,7 +11,7 @@ from src.model import Model
 from src.attack import FastGradientSignUntargeted
 from src.utils import makedirs, create_logger, tensor2cuda, numpy2cuda, evaluate, save_model
 
-from argument import parser, print_args
+from src.argument import parser, print_args
 
 class Trainer():
     def __init__(self, args, logger, attack):
