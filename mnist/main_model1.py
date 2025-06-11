@@ -6,8 +6,8 @@ from torch.utils.data import DataLoader
 
 import torchvision as tv
 
-from src.time import time
-from src.model1 import Model1
+from time import time
+from src.model.model1 import Model1
 from src.attack import FastGradientSignUntargeted
 from src.utils import makedirs, create_logger, tensor2cuda, numpy2cuda, evaluate, save_model
 
@@ -163,7 +163,7 @@ def main(args):
 
     print_args(args, logger)
 
-    model = Model(i_c=1, n_c=10)
+    model = Model1(i_c=1, n_c=10)
 
     attack = FastGradientSignUntargeted(model, 
                                         args.epsilon, 
