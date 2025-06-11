@@ -6,8 +6,8 @@ from torch.utils.data import DataLoader
 
 import torchvision as tv
 
-from src.time import time
-from src.model2 import Model2  # 修改1：導入Model2（假設類名為Model）
+from time import time
+from src.model.model2 import Model2     # 修改1：導入Model2和對應攻擊模塊
 from src.attack import FastGradientSignUntargeted
 from src.utils import makedirs, create_logger, tensor2cuda, numpy2cuda, evaluate, save_model
 
@@ -21,7 +21,6 @@ class Trainer():
 
     def train(self, model, tr_loader, va_loader=None, adv_train=False):
         args = self.args
-        logger = self.logger
         opt = torch.optim.Adam(model.parameters(), args.learning_rate)
         _iter = 0
         begin_time = time()
@@ -31,6 +30,7 @@ class Trainer():
                 data, label = tensor2cuda(data), tensor2cuda(label)
 
                 if adv_train:
+                    # 修改2：保持與main.py相同的對抗訓練邏輯
                     adv_data = self.attack.perturb(data, label, 'mean', True)
                     output = model(adv_data, _eval=False)
                 else:
@@ -42,55 +42,69 @@ class Trainer():
                 opt.step()
 
                 if _iter % args.n_eval_step == 0:
-                    with torch.no_grad():
-                        std_output = model(data, _eval=True)
-                    pred = torch.max(std_output, dim=1)[1]
-                    std_acc = evaluate(pred.cpu().numpy(), label.cpu().numpy()) * 100
-
-                    logger.info('epoch: %d, iter: %d, spent %.2f s' % (
-                        epoch, _iter, time() - begin_time))
-                    logger.info('std_acc: %.3f%%' % (std_acc))
-
-                    if va_loader is not None:
-                        va_acc, _ = self.test(model, va_loader, False)
-                        logger.info('\n' + '='*30 + ' evaluation ' + '='*30)
-                        logger.info('test_acc: %.3f%%' % (va_acc*100))
-                        logger.info('='*28 + ' end of evaluation ' + '='*28 + '\n')
+                    self._eval_and_log(model, data, label, epoch, _iter, begin_time, va_loader)
                     begin_time = time()
                 _iter += 1
 
+    def _eval_and_log(self, model, data, label, epoch, _iter, begin_time, va_loader):
+        """封裝評估與日誌記錄（與main.py保持相同格式）"""
+        with torch.no_grad():
+            std_output = model(data, _eval=True)
+        pred = torch.max(std_output, dim=1)[1]
+        std_acc = evaluate(pred.cpu().numpy(), label.cpu().numpy()) * 100
+
+        self.logger.info('epoch: %d, iter: %d, spent %.2f s' % (
+            epoch, _iter, time() - begin_time))
+        self.logger.info('std_acc: %.3f%%' % (std_acc))
+
+        if va_loader is not None:
+            va_acc, va_adv_acc = self.test(model, va_loader, True)  # 修改3：始終測試魯棒性
+            self.logger.info('\n' + '='*30 + ' evaluation ' + '='*30)
+            self.logger.info('test_acc: %.3f%%' % (va_acc * 100))
+            self.logger.info('robust_acc: %.3f%%' % (va_adv_acc * 100))  # 新增魯棒準確率
+            self.logger.info('='*28 + ' end of evaluation ' + '='*28 + '\n')
+
     def test(self, model, loader, adv_test=False):
+        """修改4：完整實現魯棒性測試（與main.py相同邏輯）"""
         total_acc = 0.0
-        num = 0
         total_adv_acc = 0.0
+        num = 0
 
         with torch.no_grad():
             for data, label in loader:
                 data, label = tensor2cuda(data), tensor2cuda(label)
+                
+                # 標準測試
                 output = model(data, _eval=True)
                 pred = torch.max(output, dim=1)[1]
-                te_acc = evaluate(pred.cpu().numpy(), label.cpu().numpy(), 'sum')
-                total_acc += te_acc
+                total_acc += evaluate(pred.cpu().numpy(), label.cpu().numpy(), 'sum')
+                
+                # 對抗測試
+                if adv_test:
+                    adv_data = self.attack.perturb(data, label, 'mean', False)
+                    adv_output = model(adv_data, _eval=True)
+                    adv_pred = torch.max(adv_output, dim=1)[1]
+                    total_adv_acc += evaluate(adv_pred.cpu().numpy(), label.cpu().numpy(), 'sum')
+                
                 num += output.shape[0]
 
         return total_acc / num, total_adv_acc / num
 
 def main(args):
+    # 初始化路徑（與main.py完全一致）
     save_folder = '%s_%s' % (args.dataset, args.affix)
     log_folder = os.path.join(args.log_root, save_folder)
     model_folder = os.path.join(args.model_root, save_folder)
-
     makedirs(log_folder)
     makedirs(model_folder)
-
     setattr(args, 'log_folder', log_folder)
     setattr(args, 'model_folder', model_folder)
 
+    # 修改5：使用Model2但保持相同初始化接口
     logger = create_logger(log_folder, args.todo, 'info')
     print_args(args, logger)
-
-    model = Model(i_c=1, n_c=10)  # 修改2：使用Model2初始化
-    attack = FastGradientSignUntargeted(model,  # 修改3：攻擊對象改為Model2
+    model = Model2(i_c=1, n_c=10)  # MNIST默認參數
+    attack = FastGradientSignUntargeted(model, 
                                       args.epsilon, 
                                       args.alpha, 
                                       min_val=0, 
@@ -103,24 +117,43 @@ def main(args):
 
     trainer = Trainer(args, logger, attack)
 
+    # 數據加載（與main.py相同）
+    transform = tv.transforms.Compose([
+        tv.transforms.ToTensor(),
+    ])
     if args.todo == 'train':
         tr_dataset = tv.datasets.MNIST(args.data_root, 
-                                     train=True, 
-                                     transform=tv.transforms.ToTensor(), 
-                                     download=True)
-        tr_loader = DataLoader(tr_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+                                      train=True, 
+                                      transform=transform, 
+                                      download=True)
+        tr_loader = DataLoader(tr_dataset, batch_size=args.batch_size, shuffle=True)
 
         te_dataset = tv.datasets.MNIST(args.data_root, 
-                                     train=False, 
-                                     transform=tv.transforms.ToTensor(), 
-                                     download=True)
-        te_loader = DataLoader(te_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
+                                      train=False, 
+                                      transform=transform, 
+                                      download=True)
+        te_loader = DataLoader(te_dataset, batch_size=args.batch_size, shuffle=False)
 
         trainer.train(model, tr_loader, te_loader, args.adv_train)
+        save_model(model, os.path.join(model_folder, 'model2.pth'))  # 修改6：保存文件名區分
+
     elif args.todo == 'test':
-        pass
-    else:
-        raise NotImplementedError
+        # 修改7：實現與main.py相同的測試流程
+        te_dataset = tv.datasets.MNIST(args.data_root, 
+                                      train=False, 
+                                      transform=transform, 
+                                      download=True)
+        te_loader = DataLoader(te_dataset, batch_size=args.batch_size, shuffle=False)
+        
+        if os.path.exists(os.path.join(model_folder, 'model2.pth')):
+            model.load_state_dict(torch.load(os.path.join(model_folder, 'model2.pth')))
+            test_acc, robust_acc = trainer.test(model, te_loader, True)
+            logger.info('\n' + '='*30 + ' Final Test ' + '='*30)
+            logger.info('Standard Accuracy: %.3f%%' % (test_acc * 100))
+            logger.info('Robust Accuracy: %.3f%%' % (robust_acc * 100))
+            logger.info('='*30 + ' Test Complete ' + '='*30 + '\n')
+        else:
+            logger.error('Error: Model file not found!')
 
 if __name__ == '__main__':
     args = parser()
