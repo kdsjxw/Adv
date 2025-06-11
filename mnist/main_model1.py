@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 import torchvision as tv
 
 from src.time import time
-from src.model import Model
+from src.model1 import Model1
 from src.attack import FastGradientSignUntargeted
 from src.utils import makedirs, create_logger, tensor2cuda, numpy2cuda, evaluate, save_model
 
