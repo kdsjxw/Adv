@@ -11,7 +11,7 @@ class Expression(nn.Module):
 
 class Model1(nn.Module):
     def __init__(self, i_c=1, n_c=10):
-        super(Model, self).__init__()
+        super(Model1, self).__init__()
 
         self.conv1 = nn.Conv2d(i_c, 32, 5, stride=1, padding=2, bias=True)
         self.pool1 = nn.MaxPool2d((2, 2), stride=(2, 2), padding=0)
@@ -53,7 +53,7 @@ class Model1(nn.Module):
 if __name__ == '__main__':
     i = torch.FloatTensor(4, 1, 28, 28)
 
-    n = Model()
+    n = Model1()
 
     print(n(i).size())
 
