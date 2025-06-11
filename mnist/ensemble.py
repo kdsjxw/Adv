@@ -6,9 +6,9 @@ from torch.utils.data import DataLoader
 
 import torchvision as tv
 
-from src.time import time
-from src.model1 import Model1  # 修改1：明確導入原始模型為Model1
-from src.model2 import Model2  # 修改2：新增導入第二個模型
+from time import time
+from src.model.model1 import Model1  # 修改1：明確導入原始模型為Model1
+from src.model.model2 import Model2  # 修改2：新增導入第二個模型
 from src.attack import FastGradientSignUntargeted
 from src.utils import makedirs, create_logger, tensor2cuda, numpy2cuda, evaluate, save_model
 
