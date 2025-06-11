@@ -9,7 +9,7 @@ class Expression(nn.Module):
     def forward(self, input):
         return self.func(input)
 
-class Model(nn.Module):
+class Model1(nn.Module):
     def __init__(self, i_c=1, n_c=10):
         super(Model, self).__init__()
 
